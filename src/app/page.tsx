@@ -24,6 +24,8 @@ const translations = {
     noTasks: "No tasks yet",
     noTasksHint: "Take a photo or type a task to get started!",
     clearCompleted: "Clear completed tasks",
+    checkAll: "Check all",
+    uncheckAll: "Uncheck all",
     couldNotRead: "Could not read the image. Please try again!",
     tabAll: "All Tasks",
     tabToday: "Today",
@@ -45,6 +47,8 @@ const translations = {
     noTasks: "暂无任务",
     noTasksHint: "拍照或手动输入任务即可开始！",
     clearCompleted: "清除已完成的任务",
+    checkAll: "全选",
+    uncheckAll: "取消全选",
     couldNotRead: "无法识别图片，请重试！",
     tabAll: "全部任务",
     tabToday: "今日",
@@ -164,9 +168,21 @@ export default function Home() {
 
   // Filtered task list based on active tab
   const displayedTasks = tab === "today" ? tasks.filter((t) => t.date === today) : tasks;
+  const displayedTaskIds = new Set(displayedTasks.map((t) => t.id));
   const completedCount = displayedTasks.filter((t) => t.completed).length;
   const totalCount = displayedTasks.length;
   const progress = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
+  const allChecked = totalCount > 0 && completedCount === totalCount;
+
+  const checkAll = () =>
+    setTasks((prev) =>
+      prev.map((task) => (displayedTaskIds.has(task.id) ? { ...task, completed: true } : task))
+    );
+
+  const uncheckAll = () =>
+    setTasks((prev) =>
+      prev.map((task) => (displayedTaskIds.has(task.id) ? { ...task, completed: false } : task))
+    );
 
   // For "All" tab, group by date
   const todayTasks = tasks.filter((t) => t.date === today);
@@ -317,16 +333,24 @@ export default function Home() {
           </div>
         )}
 
-        {/* Progress bar (shown when there are tasks in current view) */}
+        {/* Progress bar + check/uncheck all */}
         {totalCount > 0 && (
           <div className="mb-5">
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm font-medium text-gray-600">
                 {completedCount} {t.of} {totalCount} {t.done}
               </span>
-              {completedCount === totalCount && (
-                <span className="text-sm font-bold text-green-600">{t.allDone}</span>
-              )}
+              <div className="flex items-center gap-2">
+                {completedCount === totalCount && (
+                  <span className="text-sm font-bold text-green-600">{t.allDone}</span>
+                )}
+                <button
+                  onClick={allChecked ? uncheckAll : checkAll}
+                  className="rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-500 hover:border-sky-300 hover:text-sky-600 transition-colors"
+                >
+                  {allChecked ? t.uncheckAll : t.checkAll}
+                </button>
+              </div>
             </div>
             <div className="h-3 w-full overflow-hidden rounded-full bg-gray-200">
               <div
