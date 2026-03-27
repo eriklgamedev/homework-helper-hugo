@@ -9,14 +9,50 @@ interface Task {
   completed: boolean;
 }
 
+const translations = {
+  en: {
+    title: "Homework Helper",
+    subtitle: "Take a photo of your homework and check off tasks as you go!",
+    tapPhoto: "Tap to take a photo",
+    orUpload: "or upload a screenshot",
+    reading: "Reading your homework...",
+    placeholder: "Or type a task manually...",
+    of: "of",
+    done: "done",
+    allDone: "All done! 🎉",
+    noTasks: "No tasks yet",
+    noTasksHint: "Take a photo of your homework to get started!",
+    clearCompleted: "Clear completed tasks",
+    couldNotRead: "Could not read the image. Please try again!",
+  },
+  zh: {
+    title: "作业助手",
+    subtitle: "拍一张作业的照片，逐一勾选完成的任务！",
+    tapPhoto: "点击拍照",
+    orUpload: "或上传截图",
+    reading: "正在识别作业...",
+    placeholder: "或手动输入任务...",
+    of: "/",
+    done: "已完成",
+    allDone: "全部完成！🎉",
+    noTasks: "暂无任务",
+    noTasksHint: "拍一张作业照片即可开始！",
+    clearCompleted: "清除已完成的任务",
+    couldNotRead: "无法识别图片，请重试！",
+  },
+};
+
 export default function Home() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [newTaskText, setNewTaskText] = useState("");
+  const [lang, setLang] = useState<"en" | "zh">("en");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const t = translations[lang];
 
   const addManualTask = () => {
     const text = newTaskText.trim();
@@ -36,12 +72,10 @@ export default function Home() {
 
       setError(null);
 
-      // Show preview
       const reader = new FileReader();
       reader.onload = (ev) => setPreview(ev.target?.result as string);
       reader.readAsDataURL(file);
 
-      // Convert to base64 for API
       const arrayBuffer = await file.arrayBuffer();
       const bytes = new Uint8Array(arrayBuffer);
       let binary = "";
@@ -56,12 +90,10 @@ export default function Home() {
         const res = await fetch("/api/extract-tasks", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ image: dataUrl }),
+          body: JSON.stringify({ image: dataUrl, lang }),
         });
 
-        if (!res.ok) {
-          throw new Error("Failed to extract tasks");
-        }
+        if (!res.ok) throw new Error("Failed to extract tasks");
 
         const data = await res.json();
         const newTasks: Task[] = data.tasks.map(
@@ -74,28 +106,27 @@ export default function Home() {
         );
         setTasks((prev) => [...prev, ...newTasks]);
       } catch {
-        setError("Could not read the image. Please try again!");
+        setError(translations[lang].couldNotRead);
       } finally {
         setLoading(false);
         if (fileInputRef.current) fileInputRef.current.value = "";
       }
     },
-    []
+    [lang]
   );
 
-  const toggleTask = (id: string) => {
+  const toggleTask = (id: string) =>
     setTasks((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, completed: !t.completed } : t))
+      prev.map((task) =>
+        task.id === id ? { ...task, completed: !task.completed } : task
+      )
     );
-  };
 
-  const removeTask = (id: string) => {
-    setTasks((prev) => prev.filter((t) => t.id !== id));
-  };
+  const removeTask = (id: string) =>
+    setTasks((prev) => prev.filter((task) => task.id !== id));
 
-  const clearCompleted = () => {
-    setTasks((prev) => prev.filter((t) => !t.completed));
-  };
+  const clearCompleted = () =>
+    setTasks((prev) => prev.filter((task) => !task.completed));
 
   const completedCount = tasks.filter((t) => t.completed).length;
   const totalCount = tasks.length;
@@ -103,38 +134,52 @@ export default function Home() {
 
   const subjectColors: Record<string, string> = {
     math: "bg-blue-100 text-blue-700",
+    数学: "bg-blue-100 text-blue-700",
     reading: "bg-green-100 text-green-700",
+    阅读: "bg-green-100 text-green-700",
     science: "bg-purple-100 text-purple-700",
+    科学: "bg-purple-100 text-purple-700",
     writing: "bg-orange-100 text-orange-700",
+    写作: "bg-orange-100 text-orange-700",
     spelling: "bg-pink-100 text-pink-700",
+    拼写: "bg-pink-100 text-pink-700",
     history: "bg-yellow-100 text-yellow-700",
+    历史: "bg-yellow-100 text-yellow-700",
     art: "bg-red-100 text-red-700",
+    美术: "bg-red-100 text-red-700",
     music: "bg-indigo-100 text-indigo-700",
+    音乐: "bg-indigo-100 text-indigo-700",
   };
 
   const getSubjectStyle = (subject?: string) => {
     if (!subject) return "bg-gray-100 text-gray-600";
-    return subjectColors[subject.toLowerCase()] || "bg-gray-100 text-gray-600";
+    return subjectColors[subject.toLowerCase()] ?? subjectColors[subject] ?? "bg-gray-100 text-gray-600";
   };
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-sky-100 via-white to-amber-50 p-4 sm:p-8">
       <div className="mx-auto max-w-lg">
+
         {/* Header */}
-        <div className="mb-8 text-center">
-          <h1 className="text-4xl font-bold text-sky-600 mb-1">
-            Homework Helper
-          </h1>
-          <p className="text-gray-500 text-sm">
-            Take a photo of your homework and check off tasks as you go!
-          </p>
+        <div className="mb-8 flex items-start justify-between">
+          <div>
+            <h1 className="text-4xl font-bold text-sky-600 mb-1">{t.title}</h1>
+            <p className="text-gray-500 text-sm">{t.subtitle}</p>
+          </div>
+          {/* Language toggle */}
+          <button
+            onClick={() => setLang((l) => (l === "en" ? "zh" : "en"))}
+            className="ml-4 mt-1 shrink-0 rounded-xl border-2 border-sky-200 bg-white px-3 py-1.5 text-sm font-semibold text-sky-600 transition-colors hover:border-sky-400 hover:bg-sky-50"
+          >
+            {lang === "en" ? "中文" : "EN"}
+          </button>
         </div>
 
         {/* Upload Area */}
-        <div className="mb-6">
+        <div className="mb-4">
           <label
             htmlFor="image-upload"
-            className={`flex flex-col items-center justify-center rounded-2xl border-3 border-dashed p-8 cursor-pointer transition-all ${
+            className={`flex flex-col items-center justify-center rounded-2xl border-2 border-dashed p-8 cursor-pointer transition-all ${
               loading
                 ? "border-amber-300 bg-amber-50"
                 : "border-sky-300 bg-white hover:border-sky-400 hover:bg-sky-50"
@@ -143,9 +188,7 @@ export default function Home() {
             {loading ? (
               <div className="flex flex-col items-center gap-3">
                 <div className="h-10 w-10 animate-spin rounded-full border-4 border-sky-200 border-t-sky-500" />
-                <span className="text-sky-600 font-medium">
-                  Reading your homework...
-                </span>
+                <span className="text-sky-600 font-medium">{t.reading}</span>
               </div>
             ) : (
               <>
@@ -167,12 +210,8 @@ export default function Home() {
                     d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0z"
                   />
                 </svg>
-                <span className="text-sky-600 font-semibold text-lg">
-                  Tap to take a photo
-                </span>
-                <span className="text-gray-400 text-sm mt-1">
-                  or upload a screenshot
-                </span>
+                <span className="text-sky-600 font-semibold text-lg">{t.tapPhoto}</span>
+                <span className="text-gray-400 text-sm mt-1">{t.orUpload}</span>
               </>
             )}
           </label>
@@ -196,7 +235,7 @@ export default function Home() {
             value={newTaskText}
             onChange={(e) => setNewTaskText(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && addManualTask()}
-            placeholder="Or type a task manually..."
+            placeholder={t.placeholder}
             className="flex-1 rounded-xl border-2 border-gray-200 bg-white px-4 py-3 text-sm text-gray-800 placeholder-gray-400 focus:border-sky-400 focus:outline-none"
           />
           <button
@@ -234,12 +273,10 @@ export default function Home() {
           <div className="mb-6">
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm font-medium text-gray-600">
-                {completedCount} of {totalCount} done
+                {completedCount} {t.of} {totalCount} {t.done}
               </span>
               {completedCount === totalCount && (
-                <span className="text-sm font-bold text-green-600">
-                  All done!
-                </span>
+                <span className="text-sm font-bold text-green-600">{t.allDone}</span>
               )}
             </div>
             <div className="h-4 w-full overflow-hidden rounded-full bg-gray-200">
@@ -270,41 +307,21 @@ export default function Home() {
                       ? "border-green-400 bg-green-400 text-white"
                       : "border-gray-300 hover:border-sky-400"
                   }`}
-                  aria-label={
-                    task.completed ? "Mark as incomplete" : "Mark as complete"
-                  }
+                  aria-label={task.completed ? "Mark as incomplete" : "Mark as complete"}
                 >
                   {task.completed && (
-                    <svg
-                      className="h-3.5 w-3.5"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      strokeWidth={3}
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M5 13l4 4L19 7"
-                      />
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                     </svg>
                   )}
                 </button>
 
                 <div className="flex-1 min-w-0">
-                  <p
-                    className={`text-base leading-snug ${
-                      task.completed
-                        ? "text-gray-400 line-through"
-                        : "text-gray-800"
-                    }`}
-                  >
+                  <p className={`text-base leading-snug ${task.completed ? "text-gray-400 line-through" : "text-gray-800"}`}>
                     {task.text}
                   </p>
                   {task.subject && (
-                    <span
-                      className={`mt-1.5 inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${getSubjectStyle(task.subject)}`}
-                    >
+                    <span className={`mt-1.5 inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${getSubjectStyle(task.subject)}`}>
                       {task.subject}
                     </span>
                   )}
@@ -315,18 +332,8 @@ export default function Home() {
                   className="shrink-0 text-gray-300 hover:text-red-400 transition-colors"
                   aria-label="Remove task"
                 >
-                  <svg
-                    className="h-5 w-5"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M6 18L18 6M6 6l12 12"
-                    />
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
               </div>
@@ -334,23 +341,21 @@ export default function Home() {
           </div>
         )}
 
-        {/* Actions */}
+        {/* Clear completed */}
         {completedCount > 0 && (
           <button
             onClick={clearCompleted}
             className="mt-4 w-full rounded-xl bg-gray-100 py-2.5 text-sm font-medium text-gray-500 hover:bg-gray-200 transition-colors"
           >
-            Clear completed tasks
+            {t.clearCompleted}
           </button>
         )}
 
         {/* Empty state */}
         {tasks.length === 0 && !loading && (
           <div className="mt-8 text-center text-gray-400">
-            <p className="text-lg">No tasks yet</p>
-            <p className="text-sm mt-1">
-              Take a photo of your homework to get started!
-            </p>
+            <p className="text-lg">{t.noTasks}</p>
+            <p className="text-sm mt-1">{t.noTasksHint}</p>
           </div>
         )}
       </div>
