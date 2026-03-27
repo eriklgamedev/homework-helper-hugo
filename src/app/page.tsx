@@ -206,8 +206,7 @@ export default function Home() {
   const [preview, setPreview] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [newTaskText, setNewTaskText] = useState("");
-  const [lang, setLang] = useState<"en" | "zh">("en");
-  const [tab, setTab] = useState<"all" | "today">("today");
+  const [lang, setLang] = useState<"en" | "zh">("zh");
   const [bouncingIds, setBouncingIds] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -222,7 +221,7 @@ export default function Home() {
       if (raw) {
         const saved = JSON.parse(raw);
         if (saved.tasks) setTasks(saved.tasks);
-        if (saved.lang) setLang(saved.lang);
+        if (saved.lang) setLang(saved.lang as "en" | "zh");
       }
     } catch {
       // ignore corrupt data
@@ -283,7 +282,6 @@ export default function Home() {
           })
         );
         setTasks((prev) => [...prev, ...newTasks]);
-        setTab("today");
       } catch {
         setError(t.couldNotRead);
       } finally {
@@ -315,22 +313,14 @@ export default function Home() {
   const clearCompleted = () => setTasks((prev) => prev.filter((t) => !t.completed));
 
   // ── Derived ────────────────────────────────────────────────────────────────
-  const displayedTasks = tab === "today" ? tasks.filter((t) => t.date === today) : tasks;
-  const displayedTaskIds = new Set(displayedTasks.map((t) => t.id));
-  const completedCount = displayedTasks.filter((t) => t.completed).length;
-  const totalCount = displayedTasks.length;
+  const completedCount = tasks.filter((t) => t.completed).length;
+  const totalCount = tasks.length;
   const progress = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
   const allChecked = totalCount > 0 && completedCount === totalCount;
   const allDone = allChecked;
 
-  const checkAll = () =>
-    setTasks((prev) =>
-      prev.map((task) => (displayedTaskIds.has(task.id) ? { ...task, completed: true } : task))
-    );
-  const uncheckAll = () =>
-    setTasks((prev) =>
-      prev.map((task) => (displayedTaskIds.has(task.id) ? { ...task, completed: false } : task))
-    );
+  const checkAll = () => setTasks((prev) => prev.map((t) => ({ ...t, completed: true })));
+  const uncheckAll = () => setTasks((prev) => prev.map((t) => ({ ...t, completed: false })));
 
   const todayTasks = tasks.filter((t) => t.date === today);
   const earlierTasks = tasks.filter((t) => t.date !== today);
@@ -509,31 +499,6 @@ export default function Home() {
               </div>
             )}
 
-            {/* Tabs */}
-            <div className="mb-4 flex gap-1.5 rounded-2xl bg-gray-100 p-1.5">
-              {(["today", "all"] as const).map((tabId) => (
-                <button
-                  key={tabId}
-                  onClick={() => setTab(tabId)}
-                  className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2.5 text-sm font-semibold transition-all active:scale-[0.97] ${
-                    tab === tabId
-                      ? "bg-white text-violet-600 shadow-sm"
-                      : "text-gray-500 hover:text-gray-700"
-                  }`}
-                >
-                  {tabId === "today" ? t.tabToday : t.tabAll}
-                  {tabId === "today" && todayTasks.length > 0 && (
-                    <span
-                      className={`inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-xs font-bold ${
-                        tab === "today" ? "bg-violet-100 text-violet-600" : "bg-gray-200 text-gray-500"
-                      }`}
-                    >
-                      {todayTasks.length}
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
 
             {/* Progress card */}
             {totalCount > 0 && (
@@ -571,68 +536,46 @@ export default function Home() {
               </div>
             )}
 
-            {/* Today tab */}
-            {tab === "today" && (
-              displayedTasks.length > 0 ? (
-                <div className="space-y-2.5">
-                  {displayedTasks.map((task, i) => (
-                    <TaskCard
-                      key={task.id}
-                      task={task}
-                      index={i}
-                      bouncing={bouncingIds.has(task.id)}
-                      onToggle={toggleTask}
-                      onRemove={removeTask}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <EmptyState title={t.noTodayTasks} hint={t.noTodayHint} />
-              )
-            )}
-
-            {/* All tab */}
-            {tab === "all" && (
-              tasks.length === 0 ? (
-                <EmptyState title={t.noTasks} hint={t.noTasksHint} />
-              ) : (
-                <div className="space-y-5">
-                  {todayTasks.length > 0 && (
-                    <div>
-                      <p className="mb-2.5 text-xs font-bold uppercase tracking-wider text-gray-400">{t.today}</p>
-                      <div className="space-y-2.5">
-                        {todayTasks.map((task, i) => (
-                          <TaskCard
-                            key={task.id}
-                            task={task}
-                            index={i}
-                            bouncing={bouncingIds.has(task.id)}
-                            onToggle={toggleTask}
-                            onRemove={removeTask}
-                          />
-                        ))}
-                      </div>
+            {/* Task list — grouped by date */}
+            {tasks.length === 0 ? (
+              <EmptyState title={t.noTasks} hint={t.noTasksHint} />
+            ) : (
+              <div className="space-y-5">
+                {todayTasks.length > 0 && (
+                  <div>
+                    <p className="mb-2.5 text-xs font-bold uppercase tracking-wider text-gray-400">{t.today}</p>
+                    <div className="space-y-2.5">
+                      {todayTasks.map((task, i) => (
+                        <TaskCard
+                          key={task.id}
+                          task={task}
+                          index={i}
+                          bouncing={bouncingIds.has(task.id)}
+                          onToggle={toggleTask}
+                          onRemove={removeTask}
+                        />
+                      ))}
                     </div>
-                  )}
-                  {earlierTasks.length > 0 && (
-                    <div>
-                      <p className="mb-2.5 text-xs font-bold uppercase tracking-wider text-gray-400">{t.earlier}</p>
-                      <div className="space-y-2.5">
-                        {earlierTasks.map((task, i) => (
-                          <TaskCard
-                            key={task.id}
-                            task={task}
-                            index={i}
-                            bouncing={bouncingIds.has(task.id)}
-                            onToggle={toggleTask}
-                            onRemove={removeTask}
-                          />
-                        ))}
-                      </div>
+                  </div>
+                )}
+                {earlierTasks.length > 0 && (
+                  <div>
+                    <p className="mb-2.5 text-xs font-bold uppercase tracking-wider text-gray-400">{t.earlier}</p>
+                    <div className="space-y-2.5">
+                      {earlierTasks.map((task, i) => (
+                        <TaskCard
+                          key={task.id}
+                          task={task}
+                          index={i}
+                          bouncing={bouncingIds.has(task.id)}
+                          onToggle={toggleTask}
+                          onRemove={removeTask}
+                        />
+                      ))}
                     </div>
-                  )}
-                </div>
-              )
+                  </div>
+                )}
+              </div>
             )}
 
             {/* Clear completed */}
