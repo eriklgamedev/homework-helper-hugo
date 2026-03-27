@@ -8,9 +8,10 @@ interface Task {
   subject?: string;
   completed: boolean;
   date: string;
+  recurring?: boolean; // true = daily repeating task
 }
 
-const STORAGE_KEY = "homework-helper-v1";
+const STORAGE_KEY = "homework-helper-v2";
 
 const translations = {
   en: {
@@ -20,6 +21,7 @@ const translations = {
     scanHint: "Take a photo or upload a screenshot",
     reading: "Reading your homework...",
     placeholder: "Add a task...",
+    placeholderDaily: "Add daily routine...",
     of: "of",
     done: "done",
     allDone: "All done! 🎉",
@@ -29,15 +31,15 @@ const translations = {
     checkAll: "Check all",
     uncheckAll: "Uncheck all",
     couldNotRead: "Couldn't read the image. Please try again!",
-    tabAll: "All",
-    tabToday: "Today",
-    noTodayTasks: "Nothing for today",
-    noTodayHint: "Scan homework or add a task!",
+    daily: "Daily Routines",
+    dailyHint: "Repeats every day",
+    assignments: "Assignments",
     today: "Today",
-    thisWeek: "This Week",
     earlier: "Earlier",
     lastScan: "Last scan",
     extracted: "Tasks extracted",
+    modeDaily: "Daily",
+    modeOneOff: "Task",
   },
   zh: {
     title: "作业助手",
@@ -46,6 +48,7 @@ const translations = {
     scanHint: "拍照或上传截图",
     reading: "正在识别...",
     placeholder: "添加任务...",
+    placeholderDaily: "添加每日常规...",
     of: "/",
     done: "已完成",
     allDone: "全部完成！🎉",
@@ -55,30 +58,20 @@ const translations = {
     checkAll: "全选",
     uncheckAll: "取消全选",
     couldNotRead: "无法识别图片，请重试！",
-    tabAll: "全部",
-    tabToday: "今日",
-    noTodayTasks: "今日暂无任务",
-    noTodayHint: "扫描作业或添加任务！",
+    daily: "每日常规",
+    dailyHint: "每天自动重置",
+    assignments: "今日作业",
     today: "今天",
-    thisWeek: "本周",
-    earlier: "更早",
+    earlier: "之前",
     lastScan: "上次扫描",
     extracted: "已提取任务",
+    modeDaily: "每日",
+    modeOneOff: "作业",
   },
 };
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
-}
-
-/** Monday of the current week (local time) as YYYY-MM-DD */
-function thisWeekStartStr() {
-  const now = new Date();
-  const day = now.getDay(); // 0=Sun
-  const offset = day === 0 ? 6 : day - 1; // days since Monday
-  const monday = new Date(now);
-  monday.setDate(now.getDate() - offset);
-  return monday.toISOString().slice(0, 10);
 }
 
 const subjectColorMap: Record<string, { border: string; bg: string; text: string }> = {
@@ -108,11 +101,7 @@ const DEFAULT_COLOR = { border: "#8b5cf6", bg: "#f5f3ff", text: "#5b21b6" };
 
 function getSubjectColor(subject?: string) {
   if (!subject) return DEFAULT_COLOR;
-  return (
-    subjectColorMap[subject.toLowerCase()] ??
-    subjectColorMap[subject] ??
-    DEFAULT_COLOR
-  );
+  return subjectColorMap[subject.toLowerCase()] ?? subjectColorMap[subject] ?? DEFAULT_COLOR;
 }
 
 // ─── TaskCard ────────────────────────────────────────────────────────────────
@@ -138,7 +127,6 @@ function TaskCard({
         borderLeft: `4px solid ${task.completed ? "#e5e7eb" : color.border}`,
       }}
     >
-      {/* Checkbox */}
       <button
         onClick={() => onToggle(task.id)}
         className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full border-2 transition-all duration-150 active:scale-90 ${
@@ -152,23 +140,15 @@ function TaskCard({
           <svg
             className="h-5 w-5 text-white"
             style={{ animation: bouncing ? "checkBounce 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both" : undefined }}
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth={3}
+            fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}
           >
             <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
           </svg>
         )}
       </button>
 
-      {/* Text + subject */}
       <div className="flex-1 min-w-0">
-        <p
-          className={`text-sm leading-snug transition-all duration-300 ${
-            task.completed ? "text-gray-400 line-through" : "text-gray-800"
-          }`}
-        >
+        <p className={`text-sm leading-snug transition-all duration-300 ${task.completed ? "text-gray-400 line-through" : "text-gray-800"}`}>
           {task.text}
         </p>
         {task.subject && (
@@ -181,7 +161,6 @@ function TaskCard({
         )}
       </div>
 
-      {/* Remove */}
       <button
         onClick={() => onRemove(task.id)}
         className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-gray-300 transition-all hover:bg-red-50 hover:text-red-400 active:scale-90"
@@ -191,6 +170,16 @@ function TaskCard({
           <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
         </svg>
       </button>
+    </div>
+  );
+}
+
+// ─── SectionHeader ───────────────────────────────────────────────────────────
+function SectionHeader({ emoji, label, color }: { emoji: string; label: string; color: string }) {
+  return (
+    <div className="mb-2.5 flex items-center gap-2">
+      <span className="text-base">{emoji}</span>
+      <p className={`text-xs font-bold uppercase tracking-wider ${color}`}>{label}</p>
     </div>
   );
 }
@@ -218,6 +207,7 @@ export default function Home() {
   const [preview, setPreview] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [newTaskText, setNewTaskText] = useState("");
+  const [isRecurring, setIsRecurring] = useState(false);
   const [lang, setLang] = useState<"en" | "zh">("zh");
   const [bouncingIds, setBouncingIds] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -226,35 +216,46 @@ export default function Home() {
   const t = translations[lang];
   const today = todayStr();
 
-  // ── Persist ────────────────────────────────────────────────────────────────
+  // ── Persist + daily reset ────────────────────────────────────────────────
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const saved = JSON.parse(raw);
-        if (saved.tasks) setTasks(saved.tasks);
+        let loadedTasks: Task[] = saved.tasks ?? [];
+        const lastReset: string = saved.lastResetDate ?? "";
+        // Reset recurring tasks if it's a new day
+        if (lastReset !== today) {
+          loadedTasks = loadedTasks.map((t) =>
+            t.recurring ? { ...t, completed: false } : t
+          );
+        }
+        setTasks(loadedTasks);
         if (saved.lang) setLang(saved.lang as "en" | "zh");
       }
     } catch {
       // ignore corrupt data
     }
     setHydrated(true);
-  }, []);
+  }, [today]);
 
   useEffect(() => {
     if (!hydrated) return;
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ tasks, lang }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ tasks, lang, lastResetDate: today }));
     } catch {
       // ignore quota errors
     }
-  }, [tasks, lang, hydrated]);
+  }, [tasks, lang, today, hydrated]);
 
   // ── Actions ────────────────────────────────────────────────────────────────
   const addManualTask = () => {
     const text = newTaskText.trim();
     if (!text) return;
-    setTasks((prev) => [...prev, { id: `${Date.now()}`, text, completed: false, date: today }]);
+    setTasks((prev) => [
+      ...prev,
+      { id: `${Date.now()}`, text, completed: false, date: today, recurring: isRecurring },
+    ]);
     setNewTaskText("");
     inputRef.current?.focus();
   };
@@ -291,6 +292,7 @@ export default function Home() {
             subject: item.subject,
             completed: false,
             date: today,
+            recurring: false,
           })
         );
         setTasks((prev) => [...prev, ...newTasks]);
@@ -322,24 +324,24 @@ export default function Home() {
   };
 
   const removeTask = (id: string) => setTasks((prev) => prev.filter((t) => t.id !== id));
-  const clearCompleted = () => setTasks((prev) => prev.filter((t) => !t.completed));
+  const clearCompleted = () =>
+    setTasks((prev) => prev.filter((t) => t.recurring || !t.completed));
 
   // ── Derived ────────────────────────────────────────────────────────────────
-  const completedCount = tasks.filter((t) => t.completed).length;
-  const totalCount = tasks.length;
-  const progress = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
-  const allChecked = totalCount > 0 && completedCount === totalCount;
-  const allDone = allChecked;
+  const dailyTasks      = tasks.filter((t) => t.recurring);
+  const oneOffTasks     = tasks.filter((t) => !t.recurring);
+  const todayTasks      = oneOffTasks.filter((t) => t.date === today);
+  const earlierTasks    = oneOffTasks.filter((t) => t.date < today);
 
-  const checkAll = () => setTasks((prev) => prev.map((t) => ({ ...t, completed: true })));
+  const completedCount  = tasks.filter((t) => t.completed).length;
+  const totalCount      = tasks.length;
+  const progress        = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
+  const allChecked      = totalCount > 0 && completedCount === totalCount;
+  const allDone         = allChecked;
+
+  const checkAll   = () => setTasks((prev) => prev.map((t) => ({ ...t, completed: true })));
   const uncheckAll = () => setTasks((prev) => prev.map((t) => ({ ...t, completed: false })));
 
-  const weekStart = thisWeekStartStr();
-  const todayTasks    = tasks.filter((t) => t.date === today);
-  const thisWeekTasks = tasks.filter((t) => t.date >= weekStart && t.date < today);
-  const earlierTasks  = tasks.filter((t) => t.date < weekStart);
-
-  // Prevent SSR/hydration mismatch (localStorage is client-only)
   if (!hydrated) return null;
 
   return (
@@ -381,10 +383,7 @@ export default function Home() {
         }
       `}</style>
 
-      <main
-        className="flex flex-col bg-gradient-to-b from-violet-50 via-white to-amber-50"
-        style={{ minHeight: "100dvh" }}
-      >
+      <main className="flex flex-col bg-gradient-to-b from-violet-50 via-white to-amber-50" style={{ minHeight: "100dvh" }}>
         {/* ── Scrollable body ── */}
         <div className="flex-1 overflow-y-auto" style={{ paddingBottom: "6rem" }}>
           <div className="mx-auto max-w-lg px-4 pt-6 pb-2">
@@ -407,7 +406,7 @@ export default function Home() {
               </div>
               <button
                 onClick={() => setLang((l) => (l === "en" ? "zh" : "en"))}
-                className="flex h-10 items-center gap-1.5 rounded-full border border-gray-200 bg-white px-4 text-sm font-semibold text-gray-600 shadow-sm transition-all hover:border-violet-300 hover:text-violet-600 active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500"
+                className="flex h-10 items-center gap-1.5 rounded-full border border-gray-200 bg-white px-4 text-sm font-semibold text-gray-600 shadow-sm transition-all hover:border-violet-300 hover:text-violet-600 active:scale-95"
               >
                 <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 21l5.25-11.25L21 21m-9-3h7.5M3 5.621a48.474 48.474 0 016-.371m0 0c1.12 0 2.233.038 3.334.114M9 5.25V3m3.334 2.364C11.176 10.658 7.69 15.08 3 17.502m9.334-12.138c.896.061 1.785.147 2.666.257m-4.589 8.495a18.023 18.023 0 01-3.827-5.802" />
@@ -421,31 +420,14 @@ export default function Home() {
               <label
                 htmlFor="image-upload"
                 className={`relative flex cursor-pointer items-center justify-center gap-4 overflow-visible rounded-2xl p-5 transition-all active:scale-[0.97] ${
-                  loading
-                    ? "border-2 border-violet-200 bg-violet-50"
-                    : ""
+                  loading ? "border-2 border-violet-200 bg-violet-50" : ""
                 }`}
-                style={
-                  loading
-                    ? {}
-                    : {
-                        background: "linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%)",
-                        boxShadow: "0 10px 30px rgba(124,58,237,0.35)",
-                      }
-                }
+                style={loading ? {} : { background: "linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%)", boxShadow: "0 10px 30px rgba(124,58,237,0.35)" }}
               >
                 {!loading && <div className="pulse-ring" style={{ borderRadius: "1rem" }} />}
-
                 {loading ? (
                   <div className="flex items-center gap-3">
-                    <div
-                      className="h-7 w-7 rounded-full"
-                      style={{
-                        border: "3px solid #ddd6fe",
-                        borderTopColor: "#7c3aed",
-                        animation: "spin 0.8s linear infinite",
-                      }}
-                    />
+                    <div className="h-7 w-7 rounded-full" style={{ border: "3px solid #ddd6fe", borderTopColor: "#7c3aed", animation: "spin 0.8s linear infinite" }} />
                     <span className="font-semibold text-violet-600">{t.reading}</span>
                   </div>
                 ) : (
@@ -463,15 +445,7 @@ export default function Home() {
                   </>
                 )}
               </label>
-              <input
-                ref={fileInputRef}
-                id="image-upload"
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={handleImageUpload}
-                disabled={loading}
-              />
+              <input ref={fileInputRef} id="image-upload" type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={loading} />
             </div>
 
             {/* Error */}
@@ -492,19 +466,12 @@ export default function Home() {
             {/* Preview thumbnail */}
             {preview && !loading && (
               <div className="mb-4 flex items-center gap-3 rounded-xl border border-gray-100 bg-white p-2.5 shadow-sm">
-                <img
-                  src={preview}
-                  alt="Homework preview"
-                  className="h-14 w-14 rounded-xl border border-gray-100 object-cover"
-                />
+                <img src={preview} alt="Homework preview" className="h-14 w-14 rounded-xl border border-gray-100 object-cover" />
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-medium text-gray-400">{t.lastScan}</p>
                   <p className="text-sm font-semibold text-gray-700">{t.extracted}</p>
                 </div>
-                <button
-                  onClick={() => setPreview(null)}
-                  className="flex h-8 w-8 items-center justify-center rounded-full text-gray-300 hover:bg-gray-100 hover:text-gray-500 transition-all active:scale-90"
-                >
+                <button onClick={() => setPreview(null)} className="flex h-8 w-8 items-center justify-center rounded-full text-gray-300 hover:bg-gray-100 hover:text-gray-500 transition-all active:scale-90">
                   <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                   </svg>
@@ -512,21 +479,16 @@ export default function Home() {
               </div>
             )}
 
-
             {/* Progress card */}
             {totalCount > 0 && (
               <div className={`mb-4 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm ${allDone ? "all-done" : ""}`}>
                 <div className="mb-3 flex items-center justify-between">
                   <div className="flex items-baseline gap-1">
                     <span className="text-2xl font-bold text-gray-900">{completedCount}</span>
-                    <span className="text-sm text-gray-400">
-                      {t.of} {totalCount} {t.done}
-                    </span>
+                    <span className="text-sm text-gray-400">{t.of} {totalCount} {t.done}</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    {allDone && (
-                      <span className="text-sm font-bold text-violet-600">{t.allDone}</span>
-                    )}
+                    {allDone && <span className="text-sm font-bold text-violet-600">{t.allDone}</span>}
                     <button
                       onClick={allChecked ? uncheckAll : checkAll}
                       className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-semibold text-gray-500 transition-all hover:border-violet-300 hover:bg-violet-50 hover:text-violet-600 active:scale-95"
@@ -540,26 +502,41 @@ export default function Home() {
                     className="h-full rounded-full transition-all duration-700 ease-out"
                     style={{
                       width: `${progress}%`,
-                      background: allDone
-                        ? "linear-gradient(90deg, #10b981, #34d399)"
-                        : "linear-gradient(90deg, #7c3aed, #6366f1)",
+                      background: allDone ? "linear-gradient(90deg, #10b981, #34d399)" : "linear-gradient(90deg, #7c3aed, #6366f1)",
                     }}
                   />
                 </div>
               </div>
             )}
 
-            {/* Task list — grouped: Today / This Week / Earlier */}
+            {/* ── Task sections ── */}
             {tasks.length === 0 ? (
               <EmptyState title={t.noTasks} hint={t.noTasksHint} />
             ) : (
-              <div className="space-y-5">
+              <div className="space-y-6">
+
+                {/* Daily routines */}
+                {dailyTasks.length > 0 && (
+                  <section>
+                    <div className="mb-2.5 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-base">🔁</span>
+                        <p className="text-xs font-bold uppercase tracking-wider text-emerald-600">{t.daily}</p>
+                      </div>
+                      <span className="text-xs text-gray-400">{t.dailyHint}</span>
+                    </div>
+                    <div className="space-y-2.5">
+                      {dailyTasks.map((task, i) => (
+                        <TaskCard key={task.id} task={task} index={i} bouncing={bouncingIds.has(task.id)} onToggle={toggleTask} onRemove={removeTask} />
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                {/* Today's assignments */}
                 {todayTasks.length > 0 && (
                   <section>
-                    <div className="mb-2.5 flex items-center gap-2">
-                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-violet-100 text-xs">📅</span>
-                      <p className="text-xs font-bold uppercase tracking-wider text-violet-500">{t.today}</p>
-                    </div>
+                    <SectionHeader emoji="📝" label={t.assignments} color="text-violet-500" />
                     <div className="space-y-2.5">
                       {todayTasks.map((task, i) => (
                         <TaskCard key={task.id} task={task} index={i} bouncing={bouncingIds.has(task.id)} onToggle={toggleTask} onRemove={removeTask} />
@@ -567,25 +544,11 @@ export default function Home() {
                     </div>
                   </section>
                 )}
-                {thisWeekTasks.length > 0 && (
-                  <section>
-                    <div className="mb-2.5 flex items-center gap-2">
-                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-amber-100 text-xs">📆</span>
-                      <p className="text-xs font-bold uppercase tracking-wider text-amber-500">{t.thisWeek}</p>
-                    </div>
-                    <div className="space-y-2.5">
-                      {thisWeekTasks.map((task, i) => (
-                        <TaskCard key={task.id} task={task} index={i} bouncing={bouncingIds.has(task.id)} onToggle={toggleTask} onRemove={removeTask} />
-                      ))}
-                    </div>
-                  </section>
-                )}
+
+                {/* Earlier assignments */}
                 {earlierTasks.length > 0 && (
                   <section>
-                    <div className="mb-2.5 flex items-center gap-2">
-                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-gray-100 text-xs">🗂️</span>
-                      <p className="text-xs font-bold uppercase tracking-wider text-gray-400">{t.earlier}</p>
-                    </div>
+                    <SectionHeader emoji="🗂️" label={t.earlier} color="text-gray-400" />
                     <div className="space-y-2.5">
                       {earlierTasks.map((task, i) => (
                         <TaskCard key={task.id} task={task} index={i} bouncing={bouncingIds.has(task.id)} onToggle={toggleTask} onRemove={removeTask} />
@@ -593,16 +556,17 @@ export default function Home() {
                     </div>
                   </section>
                 )}
+
               </div>
             )}
 
-            {/* Clear completed */}
-            {completedCount > 0 && (
+            {/* Clear completed (one-off only) */}
+            {oneOffTasks.some((t) => t.completed) && (
               <button
                 onClick={clearCompleted}
                 className="mt-5 w-full rounded-2xl py-3 text-sm font-semibold text-gray-400 transition-all hover:bg-red-50 hover:text-red-500 active:scale-[0.98]"
               >
-                {t.clearCompleted} ({completedCount})
+                {t.clearCompleted} ({oneOffTasks.filter((t) => t.completed).length})
               </button>
             )}
           </div>
@@ -617,32 +581,69 @@ export default function Home() {
             paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom, 0px))",
           }}
         >
-          <div className="mx-auto flex max-w-lg gap-2">
-            <input
-              ref={inputRef}
-              type="text"
-              value={newTaskText}
-              onChange={(e) => setNewTaskText(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && addManualTask()}
-              placeholder={t.placeholder}
-              className="flex-1 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-800 placeholder-gray-400 transition-all focus:border-violet-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-violet-100"
-            />
-            <button
-              onClick={addManualTask}
-              disabled={!newTaskText.trim()}
-              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-white transition-all active:scale-90 disabled:opacity-30 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500"
-              style={{
-                background: newTaskText.trim()
-                  ? "linear-gradient(135deg, #7c3aed, #4f46e5)"
-                  : "#e5e7eb",
-                boxShadow: newTaskText.trim() ? "0 6px 16px rgba(124,58,237,0.35)" : "none",
-              }}
-              aria-label="Add task"
-            >
-              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-              </svg>
-            </button>
+          <div className="mx-auto max-w-lg space-y-2">
+            {/* Mode toggle */}
+            <div className="flex gap-1.5 rounded-full border border-gray-200 bg-gray-100 p-1 w-fit">
+              <button
+                onClick={() => setIsRecurring(false)}
+                className={`rounded-full px-3 py-1 text-xs font-bold transition-all ${
+                  !isRecurring
+                    ? "bg-white text-violet-600 shadow-sm"
+                    : "text-gray-400 hover:text-gray-600"
+                }`}
+              >
+                📝 {t.modeOneOff}
+              </button>
+              <button
+                onClick={() => setIsRecurring(true)}
+                className={`rounded-full px-3 py-1 text-xs font-bold transition-all ${
+                  isRecurring
+                    ? "bg-white text-emerald-600 shadow-sm"
+                    : "text-gray-400 hover:text-gray-600"
+                }`}
+              >
+                🔁 {t.modeDaily}
+              </button>
+            </div>
+
+            {/* Input row */}
+            <div className="flex gap-2">
+              <input
+                ref={inputRef}
+                type="text"
+                value={newTaskText}
+                onChange={(e) => setNewTaskText(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && addManualTask()}
+                placeholder={isRecurring ? t.placeholderDaily : t.placeholder}
+                className="flex-1 rounded-2xl border bg-gray-50 px-4 py-3 text-sm text-gray-800 placeholder-gray-400 transition-all focus:bg-white focus:outline-none focus:ring-4"
+                style={{
+                  borderColor: isRecurring ? "#6ee7b7" : "#e5e7eb",
+                  "--tw-ring-color": isRecurring ? "rgb(209 250 229)" : "rgb(237 233 254)",
+                } as React.CSSProperties}
+              />
+              <button
+                onClick={addManualTask}
+                disabled={!newTaskText.trim()}
+                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-white transition-all active:scale-90 disabled:opacity-30"
+                style={{
+                  background: !newTaskText.trim()
+                    ? "#e5e7eb"
+                    : isRecurring
+                    ? "linear-gradient(135deg, #059669, #10b981)"
+                    : "linear-gradient(135deg, #7c3aed, #4f46e5)",
+                  boxShadow: newTaskText.trim()
+                    ? isRecurring
+                      ? "0 6px 16px rgba(16,185,129,0.35)"
+                      : "0 6px 16px rgba(124,58,237,0.35)"
+                    : "none",
+                }}
+                aria-label="Add task"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
       </main>
