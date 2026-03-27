@@ -34,6 +34,7 @@ const translations = {
     noTodayTasks: "Nothing for today",
     noTodayHint: "Scan homework or add a task!",
     today: "Today",
+    thisWeek: "This Week",
     earlier: "Earlier",
     lastScan: "Last scan",
     extracted: "Tasks extracted",
@@ -59,7 +60,8 @@ const translations = {
     noTodayTasks: "今日暂无任务",
     noTodayHint: "扫描作业或添加任务！",
     today: "今天",
-    earlier: "之前",
+    thisWeek: "本周",
+    earlier: "更早",
     lastScan: "上次扫描",
     extracted: "已提取任务",
   },
@@ -67,6 +69,16 @@ const translations = {
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
+}
+
+/** Monday of the current week (local time) as YYYY-MM-DD */
+function thisWeekStartStr() {
+  const now = new Date();
+  const day = now.getDay(); // 0=Sun
+  const offset = day === 0 ? 6 : day - 1; // days since Monday
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - offset);
+  return monday.toISOString().slice(0, 10);
 }
 
 const subjectColorMap: Record<string, { border: string; bg: string; text: string }> = {
@@ -322,8 +334,10 @@ export default function Home() {
   const checkAll = () => setTasks((prev) => prev.map((t) => ({ ...t, completed: true })));
   const uncheckAll = () => setTasks((prev) => prev.map((t) => ({ ...t, completed: false })));
 
-  const todayTasks = tasks.filter((t) => t.date === today);
-  const earlierTasks = tasks.filter((t) => t.date !== today);
+  const weekStart = thisWeekStartStr();
+  const todayTasks    = tasks.filter((t) => t.date === today);
+  const thisWeekTasks = tasks.filter((t) => t.date >= weekStart && t.date < today);
+  const earlierTasks  = tasks.filter((t) => t.date < weekStart);
 
   // Prevent SSR/hydration mismatch (localStorage is client-only)
   if (!hydrated) return null;
@@ -454,7 +468,6 @@ export default function Home() {
                 id="image-upload"
                 type="file"
                 accept="image/*"
-                capture="environment"
                 className="hidden"
                 onChange={handleImageUpload}
                 disabled={loading}
@@ -536,44 +549,49 @@ export default function Home() {
               </div>
             )}
 
-            {/* Task list — grouped by date */}
+            {/* Task list — grouped: Today / This Week / Earlier */}
             {tasks.length === 0 ? (
               <EmptyState title={t.noTasks} hint={t.noTasksHint} />
             ) : (
               <div className="space-y-5">
                 {todayTasks.length > 0 && (
-                  <div>
-                    <p className="mb-2.5 text-xs font-bold uppercase tracking-wider text-gray-400">{t.today}</p>
+                  <section>
+                    <div className="mb-2.5 flex items-center gap-2">
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-violet-100 text-xs">📅</span>
+                      <p className="text-xs font-bold uppercase tracking-wider text-violet-500">{t.today}</p>
+                    </div>
                     <div className="space-y-2.5">
                       {todayTasks.map((task, i) => (
-                        <TaskCard
-                          key={task.id}
-                          task={task}
-                          index={i}
-                          bouncing={bouncingIds.has(task.id)}
-                          onToggle={toggleTask}
-                          onRemove={removeTask}
-                        />
+                        <TaskCard key={task.id} task={task} index={i} bouncing={bouncingIds.has(task.id)} onToggle={toggleTask} onRemove={removeTask} />
                       ))}
                     </div>
-                  </div>
+                  </section>
+                )}
+                {thisWeekTasks.length > 0 && (
+                  <section>
+                    <div className="mb-2.5 flex items-center gap-2">
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-amber-100 text-xs">📆</span>
+                      <p className="text-xs font-bold uppercase tracking-wider text-amber-500">{t.thisWeek}</p>
+                    </div>
+                    <div className="space-y-2.5">
+                      {thisWeekTasks.map((task, i) => (
+                        <TaskCard key={task.id} task={task} index={i} bouncing={bouncingIds.has(task.id)} onToggle={toggleTask} onRemove={removeTask} />
+                      ))}
+                    </div>
+                  </section>
                 )}
                 {earlierTasks.length > 0 && (
-                  <div>
-                    <p className="mb-2.5 text-xs font-bold uppercase tracking-wider text-gray-400">{t.earlier}</p>
+                  <section>
+                    <div className="mb-2.5 flex items-center gap-2">
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-gray-100 text-xs">🗂️</span>
+                      <p className="text-xs font-bold uppercase tracking-wider text-gray-400">{t.earlier}</p>
+                    </div>
                     <div className="space-y-2.5">
                       {earlierTasks.map((task, i) => (
-                        <TaskCard
-                          key={task.id}
-                          task={task}
-                          index={i}
-                          bouncing={bouncingIds.has(task.id)}
-                          onToggle={toggleTask}
-                          onRemove={removeTask}
-                        />
+                        <TaskCard key={task.id} task={task} index={i} bouncing={bouncingIds.has(task.id)} onToggle={toggleTask} onRemove={removeTask} />
                       ))}
                     </div>
-                  </div>
+                  </section>
                 )}
               </div>
             )}
