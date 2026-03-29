@@ -241,6 +241,7 @@ export default function Home() {
   const [bouncingIds, setBouncingIds] = useState<Set<string>>(new Set());
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [dragOverSection, setDragOverSection] = useState<"daily" | "today" | "earlier" | "queue" | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -275,22 +276,60 @@ export default function Home() {
 
   // ── Drag & drop ──────────────────────────────────────────────────────────
   const handleDragStart = (id: string) => setDraggingId(id);
-  const handleDragEnter = (id: string) => setDragOverId(id);
-  const handleDrop = useCallback(() => {
+  const handleDragEnter = (id: string) => { setDragOverId(id); setDragOverSection(null); };
+
+  // Returns the property overrides needed to move a task into a given section
+  const sectionProps = useCallback((section: "daily" | "today" | "earlier" | "queue"): Partial<Task> => {
+    if (section === "daily")   return { recurring: true,  queued: false };
+    if (section === "queue")   return { recurring: false, queued: true  };
+    if (section === "today")   return { recurring: false, queued: false, date: today };
+    /* earlier */ return { recurring: false, queued: false };
+  }, [today]);
+
+  // Which section does a task belong to?
+  const taskSection = useCallback((task: Task): "daily" | "today" | "earlier" | "queue" => {
+    if (task.queued)    return "queue";
+    if (task.recurring) return "daily";
+    if (task.date === today) return "today";
+    return "earlier";
+  }, [today]);
+
+  // Drop on a specific task card (reorder + optional section change)
+  const handleDropOnTask = useCallback(() => {
     if (draggingId && dragOverId && draggingId !== dragOverId) {
       setTasks((prev) => {
         const arr = [...prev];
         const fromIdx = arr.findIndex((t) => t.id === draggingId);
-        const toIdx = arr.findIndex((t) => t.id === dragOverId);
+        const toIdx   = arr.findIndex((t) => t.id === dragOverId);
         if (fromIdx < 0 || toIdx < 0) return prev;
+        const targetSection = taskSection(arr[toIdx]);
         const [item] = arr.splice(fromIdx, 1);
-        arr.splice(toIdx, 0, item);
+        const newToIdx = arr.findIndex((t) => t.id === dragOverId);
+        arr.splice(newToIdx, 0, { ...item, ...sectionProps(targetSection) });
         return arr;
       });
     }
     setDraggingId(null);
     setDragOverId(null);
-  }, [draggingId, dragOverId]);
+    setDragOverSection(null);
+  }, [draggingId, dragOverId, sectionProps, taskSection]);
+
+  // Drop on the section container itself (append to end of that section)
+  const handleDropOnSection = useCallback((section: "daily" | "today" | "earlier" | "queue") => {
+    if (draggingId) {
+      setTasks((prev) => {
+        const arr = [...prev];
+        const fromIdx = arr.findIndex((t) => t.id === draggingId);
+        if (fromIdx < 0) return prev;
+        const [item] = arr.splice(fromIdx, 1);
+        arr.push({ ...item, ...sectionProps(section) });
+        return arr;
+      });
+    }
+    setDraggingId(null);
+    setDragOverId(null);
+    setDragOverSection(null);
+  }, [draggingId, sectionProps]);
 
   // ── Actions ───────────────────────────────────────────────────────────────
   const addManualTask = () => {
@@ -405,7 +444,7 @@ export default function Home() {
     onRemove: removeTask,
     onDragStart: handleDragStart,
     onDragEnter: handleDragEnter,
-    onDrop: handleDrop,
+    onDrop: handleDropOnTask,
   });
 
   const inputPlaceholder =
@@ -590,41 +629,52 @@ export default function Home() {
               <div className="space-y-6">
 
                 {/* Daily routines */}
-                {dailyTasks.length > 0 && (
-                  <section>
-                    <div className="mb-2.5 flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="text-base">🔁</span>
-                        <p className="text-xs font-bold uppercase tracking-wider text-emerald-600">{t.daily}</p>
-                      </div>
-                      <span className="text-xs text-gray-400">{t.dailyHint}</span>
+                <section
+                  onDragEnter={() => draggingId && setDragOverSection("daily")}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={() => handleDropOnSection("daily")}
+                  className={`rounded-2xl transition-all ${dragOverSection === "daily" && draggingId ? "ring-2 ring-emerald-400 ring-offset-2" : ""}`}
+                >
+                  <div className="mb-2.5 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">🔁</span>
+                      <p className="text-xs font-bold uppercase tracking-wider text-emerald-600">{t.daily}</p>
                     </div>
-                    <div className="space-y-2.5">
-                      {dailyTasks.map((task, i) => (
-                        <TaskCard key={task.id} {...taskCardProps(task, i)} />
-                      ))}
-                    </div>
-                  </section>
-                )}
+                    <span className="text-xs text-gray-400">{t.dailyHint}</span>
+                  </div>
+                  <div className={`space-y-2.5 min-h-[3rem] rounded-xl transition-all ${dragOverSection === "daily" && draggingId && dailyTasks.length === 0 ? "border-2 border-dashed border-emerald-300 bg-emerald-50/50 p-3" : ""}`}>
+                    {dailyTasks.map((task, i) => (
+                      <TaskCard key={task.id} {...taskCardProps(task, i)} />
+                    ))}
+                  </div>
+                </section>
 
                 {/* Today's assignments */}
-                {todayTasks.length > 0 && (
-                  <section>
-                    <div className="mb-2.5 flex items-center gap-2">
-                      <span className="text-base">📝</span>
-                      <p className="text-xs font-bold uppercase tracking-wider text-violet-500">{t.assignments}</p>
-                    </div>
-                    <div className="space-y-2.5">
-                      {todayTasks.map((task, i) => (
-                        <TaskCard key={task.id} {...taskCardProps(task, i)} />
-                      ))}
-                    </div>
-                  </section>
-                )}
+                <section
+                  onDragEnter={() => draggingId && setDragOverSection("today")}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={() => handleDropOnSection("today")}
+                  className={`rounded-2xl transition-all ${dragOverSection === "today" && draggingId ? "ring-2 ring-violet-400 ring-offset-2" : ""}`}
+                >
+                  <div className="mb-2.5 flex items-center gap-2">
+                    <span className="text-base">📝</span>
+                    <p className="text-xs font-bold uppercase tracking-wider text-violet-500">{t.assignments}</p>
+                  </div>
+                  <div className={`space-y-2.5 min-h-[3rem] rounded-xl transition-all ${dragOverSection === "today" && draggingId && todayTasks.length === 0 ? "border-2 border-dashed border-violet-300 bg-violet-50/50 p-3" : ""}`}>
+                    {todayTasks.map((task, i) => (
+                      <TaskCard key={task.id} {...taskCardProps(task, i)} />
+                    ))}
+                  </div>
+                </section>
 
                 {/* Earlier assignments */}
                 {earlierTasks.length > 0 && (
-                  <section>
+                  <section
+                    onDragEnter={() => draggingId && setDragOverSection("earlier")}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={() => handleDropOnSection("earlier")}
+                    className={`rounded-2xl transition-all ${dragOverSection === "earlier" && draggingId ? "ring-2 ring-gray-400 ring-offset-2" : ""}`}
+                  >
                     <div className="mb-2.5 flex items-center gap-2">
                       <span className="text-base">🗂️</span>
                       <p className="text-xs font-bold uppercase tracking-wider text-gray-400">{t.earlier}</p>
@@ -648,39 +698,42 @@ export default function Home() {
                 )}
 
                 {/* ── Queue section ── */}
-                {queuedTasks.length > 0 && (
-                  <section>
-                    <div className="mb-2.5 flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="text-base">🗃️</span>
-                        <p className="text-xs font-bold uppercase tracking-wider text-amber-500">{t.queue}</p>
+                <section
+                  onDragEnter={() => draggingId && setDragOverSection("queue")}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={() => handleDropOnSection("queue")}
+                  className={`rounded-2xl transition-all ${dragOverSection === "queue" && draggingId ? "ring-2 ring-amber-400 ring-offset-2" : ""}`}
+                >
+                  <div className="mb-2.5 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">🗃️</span>
+                      <p className="text-xs font-bold uppercase tracking-wider text-amber-500">{t.queue}</p>
+                      {queuedTasks.length > 0 && (
                         <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-600">
                           {queuedTasks.length}
                         </span>
-                      </div>
-                      <span className="text-xs text-gray-400">{t.queueHint}</span>
+                      )}
                     </div>
-                    <div
-                      className="space-y-2.5 rounded-2xl border-2 border-dashed border-amber-200 bg-amber-50/50 p-3"
-                      onDragOver={(e) => e.preventDefault()}
-                    >
-                      {queuedTasks.map((task, i) => (
+                    <span className="text-xs text-gray-400">{t.queueHint}</span>
+                  </div>
+                  <div className={`space-y-2.5 rounded-2xl border-2 border-dashed p-3 transition-all ${
+                    dragOverSection === "queue" && draggingId
+                      ? "border-amber-400 bg-amber-50"
+                      : "border-amber-200 bg-amber-50/50"
+                  } ${queuedTasks.length === 0 ? "min-h-[3rem] flex items-center justify-center" : ""}`}>
+                    {queuedTasks.length === 0 ? (
+                      <span className="text-xs text-amber-300">{draggingId ? "↓ Drop here" : t.queueHint}</span>
+                    ) : (
+                      queuedTasks.map((task, i) => (
                         <TaskCard key={task.id} {...taskCardProps(task, i)} />
-                      ))}
-                    </div>
-                  </section>
-                )}
+                      ))
+                    )}
+                  </div>
+                </section>
 
               </div>
             )}
 
-            {/* Empty queue drop hint when queue is empty */}
-            {queuedTasks.length === 0 && tasks.length > 0 && (
-              <div className="mt-6 flex items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-amber-200 bg-amber-50/30 py-4 text-xs text-amber-400">
-                <span>🗃️</span>
-                <span>{t.modeQueue} — {t.queueHint}</span>
-              </div>
-            )}
 
           </div>
         </div>
